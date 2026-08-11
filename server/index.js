@@ -2,6 +2,7 @@
 
 import http from 'node:http';
 import path from 'node:path';
+import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 
@@ -59,7 +60,28 @@ export async function start() {
   return server;
 }
 
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+/**
+ * True when this module is the process entry point.
+ *
+ * Both sides are reduced to a real filesystem path before comparing:
+ * `import.meta.url` is percent-encoded and symlink-resolved while
+ * `process.argv[1]` is neither, so string-comparing them silently fails for
+ * checkouts under a path containing a space or non-ASCII character, behind a
+ * symlink, or on Windows — and the server would then start nothing at all.
+ */
+function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  const real = (target) => {
+    try {
+      return realpathSync(target);
+    } catch {
+      return path.resolve(target);
+    }
+  };
+  return real(fileURLToPath(import.meta.url)) === real(process.argv[1]);
+}
+
+if (isEntryPoint()) {
   start().catch((err) => {
     console.error(err);
     process.exit(1);
