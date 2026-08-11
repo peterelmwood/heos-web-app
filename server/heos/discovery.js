@@ -77,6 +77,9 @@ export function discoverDevices({ timeout = 5000, resolveNames = true } = {}) {
 
     /** Pending re-send timers, cleared on finish so none outlive the socket. */
     const sendTimers = [];
+    // Declared up front: `finish` clears this and can run from the error
+    // handler, which must not depend on the timeout having been created yet.
+    let timer = null;
 
     const finish = async () => {
       if (settled) return;
@@ -140,7 +143,7 @@ export function discoverDevices({ timeout = 5000, resolveNames = true } = {}) {
       }
     });
 
-    const timer = setTimeout(finish, timeout);
+    timer = setTimeout(finish, timeout);
     timer.unref?.();
   });
 }

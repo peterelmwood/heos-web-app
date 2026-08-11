@@ -6,14 +6,14 @@
 import { api } from '../api.js';
 import { artwork, fill, formatTime, h } from '../dom.js';
 import { icon } from '../icons.js';
-import { chooseRoom, transport } from '../actions.js';
+import { bindVolumeSlider, chooseRoom, transport } from '../actions.js';
 import { showSheet } from '../components/sheet.js';
 import { attempt } from '../components/toast.js';
 import {
   controlPid,
   groupOf,
+  interaction,
   refreshQueue,
-  setLocalVolume,
   state,
   store,
   targetPlayer,
@@ -28,9 +28,11 @@ export class NowPlayingView {
     this.mode = 'now';
     /** Nodes updated in place by progress ticks. */
     this.progressNodes = null;
-    this.draggingVolume = false;
 
-    store.on('players', () => this.render());
+    // Skip rebuilds while a slider is being dragged; the store re-emits on release.
+    store.on('players', () => {
+      if (!interaction.active) this.render();
+    });
     store.on('target', () => {
       this.progressNodes = null;
       void this.refreshQueueIfNeeded();
@@ -218,19 +220,7 @@ export class NowPlayingView {
       value: String(player.volume ?? 0),
       'aria-label': 'Volume',
     });
-    slider.addEventListener('pointerdown', () => {
-      this.draggingVolume = true;
-    });
-    const release = () => {
-      this.draggingVolume = false;
-    };
-    slider.addEventListener('pointerup', release);
-    slider.addEventListener('pointercancel', release);
-    slider.addEventListener('input', () => {
-      const level = Number(slider.value);
-      setLocalVolume(player.pid, level);
-      api.setVolume(controlPid(player.pid), level).catch(() => {});
-    });
+    bindVolumeSlider(slider, player.pid);
 
     return h(
       'div.volume.np__volume',

@@ -6,33 +6,10 @@
 import { api } from '../api.js';
 import { artwork, fill, h } from '../dom.js';
 import { icon } from '../icons.js';
-import { transport } from '../actions.js';
+import { bindVolumeSlider, transport } from '../actions.js';
 import { attempt } from '../components/toast.js';
 import { openSystemSheet } from '../system.js';
-import { controlPid, groupOf, refreshPlayers, setTab, setTarget, setLocalVolume, state, store } from '../store.js';
-
-/** Coalesce slider drags into at most one request per player per 120ms. */
-function throttleByKey(fn, wait = 120) {
-  const timers = new Map();
-  const pending = new Map();
-  return (key, ...args) => {
-    pending.set(key, args);
-    if (timers.has(key)) return;
-    timers.set(
-      key,
-      setTimeout(() => {
-        timers.delete(key);
-        const latest = pending.get(key);
-        pending.delete(key);
-        if (latest) fn(key, ...latest);
-      }, wait),
-    );
-  };
-}
-
-const pushVolume = throttleByKey((pid, level) => {
-  api.setVolume(pid, level).catch(() => {});
-});
+import { controlPid, groupOf, interaction, refreshPlayers, setTab, setTarget, state, store } from '../store.js';
 
 export class RoomsView {
   constructor() {
@@ -43,7 +20,10 @@ export class RoomsView {
     /** @type {null | {leader: number, members: Set<number>}} */
     this.grouping = null;
 
-    store.on('players', () => this.render());
+    // Skip rebuilds while a slider is being dragged; the store re-emits on release.
+    store.on('players', () => {
+      if (!interaction.active) this.render();
+    });
     store.on('target', () => this.render());
   }
 
@@ -198,11 +178,12 @@ export class RoomsView {
       value: String(player.volume ?? 0),
       'aria-label': `Volume for ${player.name}`,
     });
-    slider.addEventListener('input', () => {
-      const level = Number(slider.value);
-      setLocalVolume(player.pid, level);
-      pushVolume(controlPid(player.pid), level);
-    });
+    const readout = h(
+      'span',
+      { style: { width: '30px', textAlign: 'right', color: 'var(--text-faint)', fontSize: '13px' } },
+      String(player.volume ?? 0),
+    );
+    bindVolumeSlider(slider, player.pid, readout);
 
     return h(
       'div.volume',
@@ -217,8 +198,7 @@ export class RoomsView {
         icon(player.muted ? 'volumeMute' : 'volume'),
       ),
       slider,
-      h('span', { style: { width: '30px', textAlign: 'right', color: 'var(--text-faint)', fontSize: '13px' } },
-        String(player.volume ?? 0)),
+      readout,
     );
   }
 

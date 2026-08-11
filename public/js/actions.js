@@ -10,7 +10,17 @@ import { api } from './api.js';
 import { showSheet } from './components/sheet.js';
 import { attempt, toast } from './components/toast.js';
 import { artFor } from './dom.js';
-import { controlPid, setTarget, state, store, targetPlayer, refreshQueue } from './store.js';
+import {
+  beginInteraction,
+  controlPid,
+  endInteraction,
+  refreshQueue,
+  setLocalVolume,
+  setTarget,
+  state,
+  store,
+  targetPlayer,
+} from './store.js';
 
 const ACTION_LABELS = {
   PLAY_NOW: 'Play Now',
@@ -180,6 +190,106 @@ export function describeType(type) {
       dlna_server: 'Media server',
     }[type] ?? ''
   );
+}
+
+/**
+ * Volume changes, coalesced per player.
+ *
+ * A slider drag fires `input` on every pixel of travel; without this a single
+ * gesture becomes dozens of HTTP requests, each of which turns into a command
+ * the speaker has to process serially. The UI updates optimistically so the
+ * thumb still tracks the finger, and at most one request per player per
+ * interval reaches the device — the last value always wins.
+ */
+const pushVolume = throttleByKey((pid, level) => {
+  api.setVolume(pid, level).catch(() => {
+    /* a failed volume nudge is not worth a toast; the next event re-syncs */
+  });
+});
+
+export function changeVolume(pid, level) {
+  setLocalVolume(pid, level);
+  pushVolume(controlPid(pid), level);
+}
+
+/**
+ * Wire up a volume `<input type="range">` for a player.
+ *
+ * Marks the store as "being interacted with" for the duration of the gesture so
+ * views hold off rebuilding the slider mid-drag, and keeps an optional readout
+ * in sync while they are not re-rendering.
+ *
+ * @param {HTMLInputElement} slider
+ * @param {number} pid
+ * @param {HTMLElement} [readout] element showing the numeric level
+ */
+export function bindVolumeSlider(slider, pid, readout) {
+  let pointerActive = false;
+  let idleTimer = null;
+
+  const stop = () => {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+    endInteraction();
+  };
+
+  // A keypress has no "release" the way a drag does: ending the interaction on
+  // keyup lets the view rebuild the slider between presses, which destroys the
+  // focused element and drops every key after the first. Stay active until the
+  // user stops adjusting or moves focus away.
+  const scheduleIdleStop = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (!pointerActive) stop();
+    }, 600);
+  };
+
+  slider.addEventListener('pointerdown', () => {
+    pointerActive = true;
+    beginInteraction();
+    // Release can land outside the slider, so listen globally for this gesture.
+    const release = () => {
+      pointerActive = false;
+      stop();
+    };
+    window.addEventListener('pointerup', release, { once: true });
+    window.addEventListener('pointercancel', release, { once: true });
+  });
+
+  slider.addEventListener('keydown', beginInteraction);
+  slider.addEventListener('blur', () => {
+    pointerActive = false;
+    stop();
+  });
+
+  slider.addEventListener('input', () => {
+    const level = Number(slider.value);
+    if (readout) readout.textContent = String(level);
+    changeVolume(pid, level);
+    if (!pointerActive) scheduleIdleStop();
+  });
+}
+
+/**
+ * Run `fn` at most once per `wait` per key, always with the newest arguments.
+ * Leading call fires immediately so the first nudge is not delayed.
+ */
+function throttleByKey(fn, wait = 120) {
+  const timers = new Map();
+  const pending = new Map();
+  return (key, ...args) => {
+    pending.set(key, args);
+    if (timers.has(key)) return;
+    timers.set(
+      key,
+      setTimeout(() => {
+        timers.delete(key);
+        const latest = pending.get(key);
+        pending.delete(key);
+        if (latest) fn(key, ...latest);
+      }, wait),
+    );
+  };
 }
 
 /** Convenience used by the queue and now-playing views. */

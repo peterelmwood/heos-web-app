@@ -130,3 +130,23 @@ export function setProgress(pid, position, duration) {
 export function setLocalVolume(pid, level) {
   mergePlayerState(pid, { volume: level });
 }
+
+/**
+ * Whether the user is currently dragging a control.
+ *
+ * Views rebuild their DOM wholesale when `players` changes, which would tear
+ * the slider out from under a drag — the pointer then has nothing to track and
+ * the value snaps back. Views skip re-rendering while this is set; releasing
+ * the control re-emits so they catch up with the final state.
+ */
+export const interaction = { active: false };
+
+export function beginInteraction() {
+  interaction.active = true;
+}
+
+export function endInteraction() {
+  if (!interaction.active) return;
+  interaction.active = false;
+  store.emit('players', state.players);
+}

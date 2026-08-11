@@ -16,6 +16,21 @@ const asInt = (value, fallback) => {
   return Number.isNaN(parsed) ? fallback : parsed;
 };
 
+/**
+ * Parse a `:pid` route parameter, rejecting anything that is not a player id.
+ * Without this a request like `/api/players/oops` reaches the device as a
+ * command with no pid and comes back as the speaker's own opaque error.
+ */
+const requirePid = (value) => {
+  const pid = Number.parseInt(value, 10);
+  if (!Number.isInteger(pid) || pid <= 0) {
+    const error = new Error(`Invalid player id: ${value}`);
+    error.statusCode = 400;
+    throw error;
+  }
+  return pid;
+};
+
 /** Wrap an async handler so rejections reach the error middleware. */
 const route = (handler) => (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
 
@@ -76,41 +91,41 @@ export function createApiRouter() {
   }));
 
   router.get('/players/:pid', route(async (req, res) => {
-    res.json(await manager.require().getPlayerState(asInt(req.params.pid)));
+    res.json(await manager.require().getPlayerState(requirePid(req.params.pid)));
   }));
 
   router.post('/players/:pid/state', route(async (req, res) => {
-    const pid = asInt(req.params.pid);
+    const pid = requirePid(req.params.pid);
     const { state } = req.body ?? {};
     await manager.require().setPlayState(pid, state);
     res.json({ pid, state });
   }));
 
   router.post('/players/:pid/next', route(async (req, res) => {
-    await manager.require().next(asInt(req.params.pid));
+    await manager.require().next(requirePid(req.params.pid));
     res.json({ ok: true });
   }));
 
   router.post('/players/:pid/previous', route(async (req, res) => {
-    await manager.require().previous(asInt(req.params.pid));
+    await manager.require().previous(requirePid(req.params.pid));
     res.json({ ok: true });
   }));
 
   router.post('/players/:pid/volume', route(async (req, res) => {
-    const pid = asInt(req.params.pid);
+    const pid = requirePid(req.params.pid);
     const level = await manager.require().setVolume(pid, Number(req.body?.level));
     res.json({ pid, level });
   }));
 
   router.post('/players/:pid/mute', route(async (req, res) => {
-    const pid = asInt(req.params.pid);
+    const pid = requirePid(req.params.pid);
     const muted = Boolean(req.body?.muted);
     await manager.require().setMute(pid, muted);
     res.json({ pid, muted });
   }));
 
   router.post('/players/:pid/play-mode', route(async (req, res) => {
-    const pid = asInt(req.params.pid);
+    const pid = requirePid(req.params.pid);
     const { repeat, shuffle } = req.body ?? {};
     await manager.require().setPlayMode(pid, { repeat, shuffle });
     res.json({ pid, repeat, shuffle });
@@ -129,7 +144,7 @@ export function createApiRouter() {
   // -------------------------------------------------------------- queue
 
   router.get('/players/:pid/queue', route(async (req, res) => {
-    const queue = await manager.require().getQueue(asInt(req.params.pid), {
+    const queue = await manager.require().getQueue(requirePid(req.params.pid), {
       start: asInt(req.query.start, 0),
       count: asInt(req.query.count, 200),
     });
@@ -137,7 +152,7 @@ export function createApiRouter() {
   }));
 
   router.post('/players/:pid/queue/play', route(async (req, res) => {
-    await manager.require().playQueueItem(asInt(req.params.pid), asInt(req.body?.qid));
+    await manager.require().playQueueItem(requirePid(req.params.pid), asInt(req.body?.qid));
     res.json({ ok: true });
   }));
 
@@ -147,22 +162,22 @@ export function createApiRouter() {
       res.status(400).json({ error: 'At least one queue id is required' });
       return;
     }
-    await manager.require().removeFromQueue(asInt(req.params.pid), qids);
+    await manager.require().removeFromQueue(requirePid(req.params.pid), qids);
     res.json({ ok: true });
   }));
 
   router.post('/players/:pid/queue/move', route(async (req, res) => {
-    await manager.require().moveQueueItem(asInt(req.params.pid), asInt(req.body?.from), asInt(req.body?.to));
+    await manager.require().moveQueueItem(requirePid(req.params.pid), asInt(req.body?.from), asInt(req.body?.to));
     res.json({ ok: true });
   }));
 
   router.delete('/players/:pid/queue', route(async (req, res) => {
-    await manager.require().clearQueue(asInt(req.params.pid));
+    await manager.require().clearQueue(requirePid(req.params.pid));
     res.json({ ok: true });
   }));
 
   router.post('/players/:pid/queue/save', route(async (req, res) => {
-    await manager.require().saveQueue(asInt(req.params.pid), req.body?.name);
+    await manager.require().saveQueue(requirePid(req.params.pid), req.body?.name);
     res.json({ ok: true });
   }));
 
