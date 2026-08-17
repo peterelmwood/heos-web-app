@@ -11,7 +11,9 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "demo": "HEOS_MOCK=1 node server/index.js",
-    "test": "node --test \"test/*.test.js\""
+    "test": "node --test \"test/*.test.js\"",
+    "test:unit": "node --test test/protocol.test.js test/client.test.js test/startup.test.js",
+    "test:browser": "node --test test/browser.test.js"
   },
   "keywords": [
     "heos",
@@ -25,5 +27,8 @@
   "dependencies": {
     "express": "^5.2.1",
     "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
   }
 }

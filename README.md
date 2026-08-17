@@ -147,12 +147,39 @@ curl -X POST localhost:3000/api/play \
 ## Tests
 
 ```bash
-npm test
+npm test              # everything
+npm run test:unit     # protocol, client and launch tests — no browser needed
+npm run test:browser  # the UI, driven in Chromium
 ```
 
-21 tests: protocol encoding/parsing unit tests, plus an end-to-end suite that boots the simulator on
-a real socket and exercises browsing, paging, search, all four add-criteria, queue editing,
-transport, grouping, favourites, AUX inputs and change events through the real client.
+33 tests across four files:
+
+- `protocol.test.js` — command encoding and response parsing.
+- `client.test.js` — boots the simulator on a real socket and drives the real client through
+  browsing, paging, search, all four add-criteria, queue editing, transport, grouping, favourites,
+  AUX inputs and change events.
+- `startup.test.js` — spawns `node server/index.js` as a child process and checks it actually
+  serves, including from a path containing a space and a symlink, and that bad input is rejected by
+  the API rather than forwarded to the device.
+- `browser.test.js` — drives the real UI in Chromium against the real server: the browse hierarchy,
+  the action sheet, the mini player, live progress from device events, search, and volume
+  interaction.
+
+The browser tests need a Chromium:
+
+```bash
+npx playwright install chromium
+```
+
+Without one they **skip** rather than fail, so `npm test` stays useful on a machine that only has
+the runtime dependencies. They also honour `HEOS_TEST_CHROMIUM=/path/to/chrome` if you would rather
+point at a browser you already have, and `HEOS_SKIP_BROWSER_TESTS=1` to opt out entirely.
+
+They earn their keep: several bugs here were only reachable with a real pointer and a live
+WebSocket — a volume drag that landed on 0 because the view rebuilt the slider mid-gesture, keyboard
+adjustment that dropped every keypress after the first for the same reason, and one HTTP request per
+pixel of slider travel. Each has an assertion, and each assertion was checked to fail when its fix
+is reverted.
 
 ## Licence
 
