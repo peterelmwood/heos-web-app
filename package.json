@@ -1,0 +1,34 @@
+{
+  "name": "heos-web-app",
+  "version": "1.0.0",
+  "description": "A browser-based HEOS controller that mirrors the music selection experience of the HEOS mobile app.",
+  "type": "module",
+  "main": "server/index.js",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "demo": "HEOS_MOCK=1 node server/index.js",
+    "test": "node --test \"test/*.test.js\"",
+    "test:unit": "node --test test/protocol.test.js test/client.test.js test/startup.test.js",
+    "test:browser": "node --test test/browser.test.js"
+  },
+  "keywords": [
+    "heos",
+    "denon",
+    "marantz",
+    "multiroom",
+    "audio",
+    "controller"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.2.1",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "playwright": "^1.62.1"
+  }
+}
