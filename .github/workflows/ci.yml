@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# The workflow only reads the repository; nothing here needs write access.
+permissions:
+  contents: read
+
+# Supersede in-flight runs for a pull request, but let pushes to main finish so
+# the history of what passed on the default branch stays complete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  unit:
+    # Protocol, client and launch suites: no browser, so these are quick and
+    # run across every Node version package.json claims to support.
+    name: Unit (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22', '24']
+    env:
+      # Nothing in this job drives a browser; skip the ~130MB postinstall.
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # `npm ci` also fails if package-lock.json has drifted from package.json.
+      - run: npm ci
+
+      - run: npm run test:unit
+
+  browser:
+    # The UI suite in real Chromium. One Node version is enough: it exercises
+    # browser behaviour, which the matrix above does not vary.
+    name: Browser (Chromium)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+        env:
+          # Install the browser in the cache-aware step below instead, so a
+          # cache hit skips the download entirely.
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+      # Key the browser cache on the exact Playwright version from the lockfile:
+      # a bump must not reuse a browser built for the previous release.
+      - name: Resolve Playwright version
+        id: playwright
+        run: |
+          version="$(node -p "require('./package-lock.json').packages['node_modules/playwright'].version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        id: browser-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
+      - name: Install Chromium
+        if: steps.browser-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      # A cached browser restores the binary but not the apt packages it links
+      # against, so those still have to be installed on a hit.
+      - name: Install Chromium system dependencies
+        if: steps.browser-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - run: npm run test:browser
+
+  audit:
+    # Guards the dependencies that actually ship. Dev-only advisories are
+    # excluded so a tooling CVE cannot block a release of the server.
+    name: Audit (production dependencies)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm audit --omit=dev --audit-level=moderate

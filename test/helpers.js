@@ -92,8 +92,19 @@ function findChromium() {
     const candidates = entries
       .filter((entry) => entry.startsWith('chromium'))
       .sort((a, b) => Number(a.includes('headless_shell')) - Number(b.includes('headless_shell')));
+    // The directory layout has changed across Playwright releases
+    // (chrome-linux -> chrome-linux64), so try every known shape.
+    const relatives = [
+      'chrome-linux/chrome',
+      'chrome-linux64/chrome',
+      'chrome-headless-shell-linux64/chrome-headless-shell',
+      'chrome-mac/Chromium.app/Contents/MacOS/Chromium',
+      'chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium',
+      'chrome-win/chrome.exe',
+      'chrome-win64/chrome.exe',
+    ];
     for (const candidate of candidates) {
-      for (const relative of ['chrome-linux/chrome', 'chrome-mac/Chromium.app/Contents/MacOS/Chromium', 'chrome-win/chrome.exe']) {
+      for (const relative of relatives) {
         const executable = path.join(root, candidate, relative);
         if (existsSync(executable)) return executable;
       }

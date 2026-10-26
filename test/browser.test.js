@@ -79,7 +79,11 @@ const deviceVolume = async (name) => {
 
 /** Drag a range input from its left edge to its right edge in `steps` moves. */
 async function dragToMax(page, slider, steps = 40) {
-  const box = await slider.boundingBox();
+  // The view rebuilds on device events, so a handle resolved a moment ago can
+  // be detached by the time it is measured — `boundingBox()` then returns null.
+  // Retry until we get a box; once the drag starts the interaction guard keeps
+  // the element in place.
+  const box = await until(async () => slider.boundingBox(), { message: 'the slider to be laid out' });
   const y = box.y + box.height / 2;
   await page.mouse.move(box.x + 5, y);
   await page.mouse.down();
@@ -90,13 +94,42 @@ async function dragToMax(page, slider, steps = 40) {
   await page.mouse.up();
 }
 
+/**
+ * Wait for a browse level to finish loading.
+ *
+ * A level renders its header and hero while the request is still in flight, so
+ * anchoring on those alone reads the previous level's rows. Wait for the header
+ * to show the expected title *and* for rows to exist.
+ */
+async function settle(page, expectedTitle) {
+  await until(
+    async () => (await page.locator('#screen-music .header__title').innerText()).startsWith(expectedTitle),
+    { message: `the "${expectedTitle}" level to open` },
+  );
+  await page.locator('#screen-music .rows .row').first().waitFor();
+}
+
+/** Click a named source or container row and wait for the level it opens. */
+async function openLevel(page, label) {
+  await page.getByText(label, { exact: true }).click();
+  await settle(page, label);
+}
+
+/** Click the nth container row, returning the label of the level it opened. */
+async function openRow(page, index = 0) {
+  const row = page.locator('#screen-music .rows .row').nth(index);
+  const label = await row.locator('.row__title').innerText();
+  await row.click();
+  await settle(page, label);
+  return label;
+}
+
 /** Play the first track in Local Music → Songs, from the Music tab. */
 async function playFirstSong(page) {
   await page.locator('.tab[data-tab="music"]').click();
-  await page.getByText('Local Music', { exact: true }).click();
-  await page.getByText('Songs', { exact: true }).click();
+  await openLevel(page, 'Local Music');
+  await openLevel(page, 'Songs');
   const first = page.locator('#screen-music .rows .row').first();
-  await first.waitFor();
   const title = await first.locator('.row__title').innerText();
   await first.click();
   return title;
@@ -118,17 +151,18 @@ describe('browser', { skip: process.env.HEOS_SKIP_BROWSER_TESTS === '1' }, () =>
       assert.equal(await spotifyRow.isDisabled(), true, 'unavailable sources are not browsable');
 
       // Drill down: source → Artists → artist → album → tracks.
-      await page.getByText('Local Music', { exact: true }).click();
-      await page.getByText('Artists', { exact: true }).click();
-      await page.locator('#screen-music .rows .row').first().click();
-      await page.locator('#screen-music .rows .row').first().click();
-      await page.locator('.hero__title').waitFor();
+      await openLevel(page, 'Local Music');
+      await openLevel(page, 'Artists');
+      const artist = await openRow(page, 0);
+      assert.equal(await page.locator('.hero__kind').innerText(), 'ARTIST');
+      await openRow(page, 0);
       assert.equal(await page.locator('.hero__kind').innerText(), 'ALBUM');
       const trackCount = await page.locator('#screen-music .rows .row').count();
-      assert.ok(trackCount > 1, 'album should list its tracks');
+      assert.ok(trackCount > 1, `album should list its tracks, saw ${trackCount}`);
 
       // Back button unwinds the navigation stack.
       await page.locator('#screen-music .header button[aria-label="Back"]').click();
+      await settle(page, artist);
       assert.equal(await page.locator('.hero__kind').innerText(), 'ARTIST');
 
       assert.deepEqual(errors, []);
@@ -142,8 +176,8 @@ describe('browser', { skip: process.env.HEOS_SKIP_BROWSER_TESTS === '1' }, () =>
     const { page, errors } = await openApp();
     try {
       await page.locator('.tab[data-tab="music"]').click();
-      await page.getByText('Local Music', { exact: true }).click();
-      await page.getByText('Songs', { exact: true }).click();
+      await openLevel(page, 'Local Music');
+      await openLevel(page, 'Songs');
       await page.locator('#screen-music .rows .row').first().locator('button.iconbtn').click();
       await page.locator('.sheet').waitFor();
 
@@ -330,7 +364,7 @@ describe('browser', { skip: process.env.HEOS_SKIP_BROWSER_TESTS === '1' }, () =>
     const { page, errors } = await openApp();
     try {
       await page.locator('.tab[data-tab="music"]').click();
-      await page.getByText('TuneIn', { exact: true }).click();
+      await openLevel(page, 'TuneIn');
       await page.locator('#screen-music .searchbar input').waitFor();
       await page.locator('#screen-music .searchbar input').fill('jazz');
 
