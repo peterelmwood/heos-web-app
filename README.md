@@ -1,5 +1,7 @@
 # heos-web-app
 
+[![CI](https://github.com/peterelmwood/heos-web-app/actions/workflows/ci.yml/badge.svg)](https://github.com/peterelmwood/heos-web-app/actions/workflows/ci.yml)
+
 A browser-based controller for [HEOS](https://www.denon.com/en-us/category/heos/) multi-room audio
 (Denon / Marantz) that reproduces the way the HEOS mobile app lets you pick music: browse your
 sources, drill into artists, albums, playlists and radio, then send what you found to any room with
@@ -180,6 +182,19 @@ WebSocket — a volume drag that landed on 0 because the view rebuilt the slider
 adjustment that dropped every keypress after the first for the same reason, and one HTTP request per
 pixel of slider travel. Each has an assertion, and each assertion was checked to fail when its fix
 is reverted.
+
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `main` and every pull request:
+
+| Job | What it does |
+| --- | --- |
+| **Unit (Node 20, 22, 24)** | `npm ci` then `npm run test:unit` on every Node version `engines` claims |
+| **Browser (Chromium)** | installs Chromium (cached on the lockfile's Playwright version) and runs `npm run test:browser` |
+| **Audit** | `npm audit --omit=dev --audit-level=moderate` over the dependencies that ship |
+
+The unit jobs set `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`, so only the browser job pays for a browser.
+In-flight runs are superseded on pull requests but allowed to finish on `main`.
 
 ## Licence
 
